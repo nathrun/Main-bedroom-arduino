@@ -8,16 +8,18 @@
 byte mac[] = {
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
-IPAddress ip(xxx, xxx, xxx, xxx);
-IPAddress myDns(xxx,xxx,xxx, xxx);
+IPAddress ip(10,0,0,21);
+IPAddress myDns(10,0,0,2);
 EthernetClient etherClient;
 
 //set constants for mqtt broker and topics that this
 //Arduino must connect to
-IPAddress mqttBrokerIP = "xxx.xxx.xxx.xxx";
-const char* mqttTopic1 = "/test/stepperMotor";
+IPAddress mqttBrokerIP(10,0,0,14);
+const char* mqttTopic1 = "/mBedroom/stepper";
+PubSubClient client1(etherClient);
+const char* mqttTopic2 = "/mBedroom/curtains";
 #define CLIENT_ID "client-mainBedroom"
-PubSubClient client(etherClient);
+String mqttMessage = "";
 
 //set constants for stepperMotor
 //sm1 short for stepperMotor 1
@@ -33,41 +35,34 @@ void spinMotor(Stepper sm, int steps, float revolutions){
 
 //----Functions for mqtt----
 void callback(char* topic, byte* payload, unsigned int length) {
+  mqttMessage = "";
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
   for (int i=0;i<length;i++) {
     Serial.print((char)payload[i]);
+    mqttMessage.concat((char)payload[i]);
   }
   Serial.println();
-/*
-  // Examine only the first character of the message
-  if(payload[0] == 49)              // Message "1" in ASCII (turn outputs ON)
-  {
-    digitalWrite(ledPin, LOW);      // LED is active-low, so this turns it on
-    digitalWrite(relayPin, HIGH);
-  } else if(payload[0] == 48)       // Message "0" in ASCII (turn outputs OFF)
-  {
-    digitalWrite(ledPin, HIGH);     // LED is active-low, so this turns it off
-    digitalWrite(relayPin, LOW);
-  } else {
-    Serial.println("Unknown value");
+  if (strcmp(topic, mqttTopic2)==0){
+    spinMotor(sm1, sm1_steps, mqttMessage.toFloat()); 
   }
-*/
+    
 }
 
 void reconnect() {
   // Loop until we're reconnected
-  while (!client.connected()) {
+  while (!client1.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect(CLIENT_ID)) {
+    if (client1.connect("Arduino")) {
       Serial.println("connected");
-      client.subscribe(mqttTopic);
+      client1.subscribe(mqttTopic1);
+      client1.subscribe(mqttTopic2);
     } else {
       Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.print(client1.state());
+      Serial.println(" try again in 1 seconds");
       // Wait 1 seconds before retrying
       delay(1000);
     }
@@ -79,15 +74,17 @@ void setup() {
     //setup for Ethernet and mqtt
     Ethernet.begin(mac, ip);
     Serial.begin(9600);
-    client.setServer(mqttBrokerIP, 1883);
-    client.setCallback(callback);
+    client1.setServer(mqttBrokerIP, 1883);
+    client1.setCallback(callback);
 
     //setup for stepper motors
     sm1.setSpeed(sm1_rpm);
 }
 
 void loop() {
-    if(!client.connected()){
-
+    if(!client1.connected()){
+      reconnect();
     }
+
+    client1.loop();
 }
