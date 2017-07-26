@@ -22,8 +22,9 @@ const char* mqttTopic2 = "/mBedroom/curtains";
 #define CLIENT_ID "client-mBedroom"
 String mqttMessage = "";
 //constants to update arduino status
-const char* device_online = "mBedroom-aurdiuno:online";
-const char* mqttTopic_deviceStatus = "/house/deviceStatus";
+const char* device_online = "online";
+const char* device_offline = "offline";
+const char* mqttTopic_deviceStatus = "/mBedroom/deviceStatus";
 unsigned long device_lastTimeTaken;
 #define deviceStatusDelay 60000
 
@@ -37,8 +38,13 @@ Stepper sm1(sm1_steps, 8,9,10,11);
 #define DHTTYPE DHT22
 #define DHTPIN 2
 #define sensorDelay 60000 //time in milliseconds
+#define sensorTDelay 4000 //for avgeraging purpuses
 unsigned long dht_lastTimeTaken;
 unsigned long currentTime;
+unsigned long dht_tempTime;
+float t_temp;
+float h_temp;
+unsigned int nSamples;
 float t;
 float h;
 char t_char[6];
@@ -73,9 +79,9 @@ void reconnect() {
   while (!client1.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client1.connect("Arduino")) {
+    if (client1.connect("Arduino", mqttTopic_deviceStatus, 0, 1, device_offline)) {
       Serial.println("connected");
-      client1.publish(mqttTopic_deviceStatus,device_online);
+      client1.publish(mqttTopic_deviceStatus,device_online, 1);
       device_lastTimeTaken = millis();
       client1.subscribe(mqttTopic1);
       client1.subscribe(mqttTopic2);
@@ -103,6 +109,10 @@ void setup() {
     //setup DHT sensor
     dhtSensor.begin();
     dht_lastTimeTaken = millis();
+    dht_tempTime = 0;
+    nSamples = 0;
+    h_temp = 0;
+    t_temp = 0;
 }
 
 void loop() {
@@ -116,47 +126,40 @@ void loop() {
     
     currentTime = millis();
 
+    //collect sensor data for averaging
+    if(abs(currentTime - dht_tempTime) > sensorTDelay){
+      float h1 = dhtSensor.readHumidity();
+      float t1 = dhtSensor.readTemperature();
+      if (!isnan(h1) && !isnan(t1)){
+        h_temp += h1;
+        t_temp += t1;
+        nSamples++;
+        dht_tempTime = millis();
+      }
+    }
+
     //publishing sensor data
     if(abs(currentTime - dht_lastTimeTaken) > sensorDelay){
-      h = dhtSensor.readHumidity();
-      t = dhtSensor.readTemperature();
+      h = h_temp/nSamples;
+      t = t_temp/nSamples;
+      h_temp = 0;
+      t_temp = 0;
+      nSamples = 0;
       if(isnan(h) || isnan(t)){
         Serial.println("Failed to read DHT sensor");
+      }else{
+        h_char;
+        t_char;
+        dtostrf(h, 4,2, h_char);
+        dtostrf(t, 3,2, t_char);
+        //char t_final[20] = "Temp:";
+        //char h_final[20] = "Humidity:";
+        //strcat(t_final, t_char);
+        //strcat(h_final, h_char);
+        client1.publish("/mBedroom/sensors/temperature", t_char, 1);
+        client1.publish("/mBedroom/sensors/humidity", h_char, 1);
+        dht_lastTimeTaken = millis();
       }
-      h_char;
-      t_char;
-      dtostrf(h, 4,2, h_char);
-      dtostrf(t, 3,2, t_char);
-      //char t_final[20] = "Temp:";
-      //char h_final[20] = "Humidity:";
-      //strcat(t_final, t_char);
-      //strcat(h_final, h_char);
-      client1.publish("/mBedroom/sensors/temperature", t_char);
-      client1.publish("/mBedroom/sensors/humidity", h_char);
-      dht_lastTimeTaken = millis();
     }
-
-    //update device status
-    if(abs(currentTime-device_lastTimeTaken)>deviceStatusDelay){
-      client1.publish(mqttTopic_deviceStatus,device_online);
-      device_lastTimeTaken = millis();
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
  
 }
