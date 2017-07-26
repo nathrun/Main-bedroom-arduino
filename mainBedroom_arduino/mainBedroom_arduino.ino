@@ -19,8 +19,13 @@ IPAddress mqttBrokerIP(10,0,0,14);
 const char* mqttTopic1 = "/mBedroom/stepper";
 PubSubClient client1(etherClient);
 const char* mqttTopic2 = "/mBedroom/curtains";
-#define CLIENT_ID "client-mainBedroom"
+#define CLIENT_ID "client-mBedroom"
 String mqttMessage = "";
+//constants to update arduino status
+const char* device_online = "mBedroom-aurdiuno:online";
+const char* mqttTopic_deviceStatus = "/house/deviceStatus";
+unsigned long device_lastTimeTaken;
+#define deviceStatusDelay 60000
 
 //set constants for stepperMotor
 //sm1 short for stepperMotor 1
@@ -32,7 +37,7 @@ Stepper sm1(sm1_steps, 8,9,10,11);
 #define DHTTYPE DHT22
 #define DHTPIN 2
 #define sensorDelay 60000 //time in milliseconds
-unsigned long lastTimeTaken;
+unsigned long dht_lastTimeTaken;
 unsigned long currentTime;
 float t;
 float h;
@@ -70,7 +75,8 @@ void reconnect() {
     // Attempt to connect
     if (client1.connect("Arduino")) {
       Serial.println("connected");
-      client1.publish("/house/deviceStatus","mBedroom-aurdiuno online");
+      client1.publish(mqttTopic_deviceStatus,device_online);
+      device_lastTimeTaken = millis();
       client1.subscribe(mqttTopic1);
       client1.subscribe(mqttTopic2);
     } else {
@@ -96,7 +102,7 @@ void setup() {
 
     //setup DHT sensor
     dhtSensor.begin();
-    lastTimeTaken = millis();
+    dht_lastTimeTaken = millis();
 }
 
 void loop() {
@@ -107,10 +113,11 @@ void loop() {
     //mqtt listener
     client1.loop();
 
-    //publishing sensor data    --make sure this is at the end of loop()!
-    currentTime = millis();
     
-    if(abs(currentTime - lastTimeTaken) > sensorDelay){
+    currentTime = millis();
+
+    //publishing sensor data
+    if(abs(currentTime - dht_lastTimeTaken) > sensorDelay){
       h = dhtSensor.readHumidity();
       t = dhtSensor.readTemperature();
       if(isnan(h) || isnan(t)){
@@ -126,7 +133,30 @@ void loop() {
       //strcat(h_final, h_char);
       client1.publish("/mBedroom/sensors/temperature", t_char);
       client1.publish("/mBedroom/sensors/humidity", h_char);
-      lastTimeTaken = millis();
+      dht_lastTimeTaken = millis();
     }
+
+    //update device status
+    if(abs(currentTime-device_lastTimeTaken)>deviceStatusDelay){
+      client1.publish(mqttTopic_deviceStatus,device_online);
+      device_lastTimeTaken = millis();
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
  
 }
