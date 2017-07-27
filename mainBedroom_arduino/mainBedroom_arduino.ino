@@ -32,6 +32,12 @@ unsigned long device_lastTimeTaken;
 //sm1 short for stepperMotor 1
 const int sm1_steps = 200; //steps in one revolution
 const int sm1_rpm = 120;
+#define sm1_enableA 12
+#define sm1_enableB 13
+unsigned int sm1_Enable = 0;
+bool sm1_inUse = false;
+unsigned long sm1_lastTimeEnabled;
+#define smRestTime 30000 //time before disabling motor
 Stepper sm1(sm1_steps, 8,9,10,11);
 
 //set constants for DHT22 (temperature and humidity) sensor
@@ -53,8 +59,17 @@ DHT dhtSensor(DHTPIN, DHTTYPE);
 
 
 //----Functions for Stepper motors----
-void spinMotor(Stepper sm, int steps, float revolutions){
-    sm.step(steps*revolutions);
+void spinMotor1(int steps, float revolutions){
+  if(sm1_Enable==0){
+    sm1_Enable =1;
+    analogWrite(sm1_enableA, 255);
+    analogWrite(sm1_enableB, 255);
+    Serial.println("sm1 enabled");
+  }
+  sm1_inUse = true;
+  sm1.step(steps*revolutions);
+  sm1_inUse = false;
+  sm1_lastTimeEnabled = millis();
 }
 
 //----Functions for mqtt----
@@ -69,7 +84,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
   Serial.println();
   if (strcmp(topic, mqttTopic2)==0){
-    spinMotor(sm1, sm1_steps, mqttMessage.toFloat()); 
+    spinMotor1(sm1_steps, mqttMessage.toFloat()); 
   }
     
 }
@@ -105,6 +120,11 @@ void setup() {
 
     //setup for stepper motors
     sm1.setSpeed(sm1_rpm);
+    sm1_lastTimeEnabled = millis();
+    pinMode(sm1_enableA, OUTPUT);
+    pinMode(sm1_enableA, OUTPUT);
+    digitalWrite(sm1_enableA, LOW);
+    digitalWrite(sm1_enableB, LOW);
 
     //setup DHT sensor
     dhtSensor.begin();
@@ -126,6 +146,16 @@ void loop() {
     
     currentTime = millis();
 
+    //check how long steppermotor has been enabled
+    if(sm1_Enable==1 && !sm1_inUse){
+      if(abs(currentTime-sm1_lastTimeEnabled)>smRestTime){
+        sm1_Enable=0;
+        analogWrite(sm1_enableA, 0);
+        analogWrite(sm1_enableB, 0);
+        Serial.println("sm1 disabled");
+      }
+    }
+    
     //collect sensor data for averaging
     if(abs(currentTime - dht_tempTime) > sensorTDelay){
       float h1 = dhtSensor.readHumidity();
