@@ -67,9 +67,19 @@ void spinMotor1(int steps, float revolutions){
     Serial.println("sm1 enabled");
   }
   sm1_inUse = true;
-  sm1.step(steps*revolutions);
+  float steps_toDo = abs(steps * revolutions);
+  int step_dir;  //---can't just have one, need to check if revolutions is < 0! check ternary statement
+  while(steps_toDo > 0 && !check_sm1Sensor(0)){
+    sm1.step(step_dir);   
+    steps_toDo--;
+  }
   sm1_inUse = false;
   sm1_lastTimeEnabled = millis();
+}
+
+bool check_sm1Sensor(int sideInteger){
+
+  //return if sensor has been triggered 
 }
 
 //----Functions for mqtt----
