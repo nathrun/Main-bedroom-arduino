@@ -59,13 +59,13 @@ DHT dhtSensor(DHTPIN, DHTTYPE);
 
 //set constants for TCRT
 const int sm1_fullOpenPin = A0;
-const int sm1_tcrtThreshold = 50; 
+const int sm1_tcrtThreshold = 80; 
 
 
 
 //----Functions for Stepper motors----
 void spinMotor1(int steps, float revolutions){
-  int stepsPerLoop = ((sm1_rpm/60)*sm1_steps)/10; //this is to check that the motor is not at the limit every 0,1 seconds
+  int stepsPerLoop = ((sm1_rpm/60)*sm1_steps)/40; //this is to check that the motor is not at the limit every 0,05 seconds
   if(sm1_Enable==0){
     sm1_Enable =1;
     analogWrite(sm1_enableA, 255);
@@ -121,9 +121,9 @@ void reconnect() {
     } else {
       Serial.print("failed, rc=");
       Serial.print(client1.state());
-      Serial.println(" try again in 1 seconds");
-      // Wait 1 seconds before retrying
-      delay(1000);
+      Serial.println(" try again in 2 seconds");
+      // Wait 2 seconds before retrying
+      delay(2000);
     }
   }
 }
@@ -132,7 +132,7 @@ void reconnect() {
 void setup() {
     //setup for Ethernet and mqtt
     Ethernet.begin(mac, ip);
-    Serial.begin(4800);
+    Serial.begin(9600);
     client1.setServer(mqttBrokerIP, 1883);
     client1.setCallback(callback);
 
