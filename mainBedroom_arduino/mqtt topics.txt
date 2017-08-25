@@ -1,0 +1,17 @@
+File to keep track of all the MQTT topics in use
+
+Main Bedroom:
+mBedroom/sensors/tempterature/status
+mBedroom/sensors/humidity/status
+mBedroom/sensors/realFeel/status
+mBedroom/curtains/status
+mBedroom/curtains/command
+mBedroom/lights/bathroom/status
+mBedroom/lights/bathroom/command
+mBedroom/lights/fanLight/status
+mBedroom/lights/fanLight/command
+mBedroom/lights/backLight/status
+mBedroom/lights/backLight/command
+
+devices:
+devices/mBedroom/arduino1Status
