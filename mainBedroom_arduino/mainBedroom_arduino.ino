@@ -16,20 +16,17 @@ EthernetClient etherClient;
 //set constants for mqtt broker and topics that this
 //arduino must connect to
 IPAddress mqttBrokerIP(10,0,0,14);
-const char* mqttTopic1 = "/mBedroom/stepper";
 PubSubClient client1(etherClient);
-const char* mqttTopic2 = "/mBedroom/curtains";
 #define CLIENT_ID "client-mBedroom"
 String mqttMessage = "";
 //constants to update arduino status
 const char* device_online = "online";
 const char* device_offline = "offline";
-const char* mqttTopic_deviceStatus = "/mBedroom/deviceStatus";
-unsigned long device_lastTimeTaken;
-#define deviceStatusDelay 60000
+const char* mqttTopic_deviceStatus = "devices/mBedroom/arduino1Status";
 
 //set constants for stepperMotor
 //sm1 short for stepperMotor 1
+//for curtains
 const int sm1_steps = 200; //steps in one revolution
 const int sm1_rpm = 120;
 #define sm1_enableA 12
@@ -39,6 +36,11 @@ bool sm1_inUse = false;
 unsigned long sm1_lastTimeEnabled;
 #define smRestTime 10000 //time before disabling motor
 Stepper sm1(sm1_steps, 8,9,10,11);
+const char* mqttCurtainsCommand = "mBedroom/curtains/command";
+//set constants for TCRT
+const int sm1_LimitPins[2] = {A0,A1};    //index 0 is for the sensor at closed, 1 at open
+const int sm1_tcrtThreshold[2] = {80,80}; 
+
 
 //set constants for DHT22 (temperature and humidity) sensor
 #define DHTTYPE DHT22
@@ -53,80 +55,9 @@ float h_temp;
 unsigned int nSamples;
 float t;
 float h;
-char t_char[6];
-char h_char[6];
+
 DHT dhtSensor(DHTPIN, DHTTYPE);
 
-//set constants for TCRT
-const int sm1_fullOpenPin = A0;
-const int sm1_tcrtThreshold = 80; 
-
-
-
-//----Functions for Stepper motors----
-void spinMotor1(int steps, float revolutions){
-  int stepsPerLoop = ((sm1_rpm/60)*sm1_steps)/40; //this is to check that the motor is not at the limit every 0,05 seconds
-  if(sm1_Enable==0){
-    sm1_Enable =1;
-    analogWrite(sm1_enableA, 255);
-    analogWrite(sm1_enableB, 255);
-    Serial.println("sm1 enabled");
-  }
-  sm1_inUse = true;
-  float steps_toDo = abs(steps * revolutions);
-  int step_dir = (revolutions<0)?-1:1;
-  while(steps_toDo > 0 && !check_sm1Sensor(0)){
-    sm1.step(step_dir*stepsPerLoop);   
-    steps_toDo -= stepsPerLoop;
-  }
-  sm1_inUse = false;
-  sm1_lastTimeEnabled = millis();
-}
-
-bool check_sm1Sensor(int sideInteger){
-  int value = analogRead(sm1_fullOpenPin);
-  Serial.print("TCRT500 value: ");
-  Serial.println(value);
-  return (value <= sm1_tcrtThreshold)? true:false;
-}
-
-//----Functions for mqtt----
-void callback(char* topic, byte* payload, unsigned int length) {
-  mqttMessage = "";
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i=0;i<length;i++) {
-    Serial.print((char)payload[i]);
-    mqttMessage.concat((char)payload[i]);
-  }
-  Serial.println();
-  if (strcmp(topic, mqttTopic2)==0){
-    spinMotor1(sm1_steps, mqttMessage.toFloat()); 
-  }
-    
-}
-
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client1.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    if (client1.connect("Arduino", mqttTopic_deviceStatus, 0, 1, device_offline)) {
-      Serial.println("connected");
-      client1.publish(mqttTopic_deviceStatus,device_online, 1);
-      device_lastTimeTaken = millis();
-      client1.subscribe(mqttTopic1);
-      client1.subscribe(mqttTopic2);
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client1.state());
-      Serial.println(" try again in 2 seconds");
-      // Wait 2 seconds before retrying
-      delay(2000);
-    }
-  }
-}
 
 
 void setup() {
@@ -188,26 +119,96 @@ void loop() {
 
     //publishing sensor data
     if(abs(currentTime - dht_lastTimeTaken) > sensorDelay){
-      h = h_temp/nSamples;
-      t = t_temp/nSamples;
-      h_temp = 0;
-      t_temp = 0;
+      post_DHTSensorData(t_temp, h_temp, nSamples);
       nSamples = 0;
-      if(isnan(h) || isnan(t)){
-        Serial.println("Failed to read DHT sensor");
-      }else{
-        h_char;
-        t_char;
-        dtostrf(h, 4,2, h_char);
-        dtostrf(t, 3,2, t_char);
-        //char t_final[20] = "Temp:";
-        //char h_final[20] = "Humidity:";
-        //strcat(t_final, t_char);
-        //strcat(h_final, h_char);
-        client1.publish("/mBedroom/sensors/temperature", t_char, 1);
-        client1.publish("/mBedroom/sensors/humidity", h_char, 1);
-        dht_lastTimeTaken = millis();
-      }
     }
  
+}//end of loop()
+
+
+//----Functions for Stepper motors----
+void spinMotor1(int steps, float revolutions){
+  int stepsPerLoop = ((sm1_rpm/60)*sm1_steps)/40; //this is to check that the motor is not at the limit every 0,05 seconds
+  if(sm1_Enable==0){
+    sm1_Enable =1;
+    analogWrite(sm1_enableA, 255);
+    analogWrite(sm1_enableB, 255);
+    Serial.println("sm1 enabled");
+  }
+  sm1_inUse = true;
+  float steps_toDo = abs(steps * revolutions);
+  int step_dir = (revolutions<0)?-1:1;
+  while(steps_toDo > 0 && !check_sm1Sensor((step_dir == -1)?0:1)){
+    sm1.step(step_dir*stepsPerLoop);   
+    steps_toDo -= stepsPerLoop;
+  }
+  sm1_inUse = false;
+  sm1_lastTimeEnabled = millis();
+}
+
+bool check_sm1Sensor(int sideInteger){
+  int value = analogRead(sm1_LimitPins[sideInteger]);
+  Serial.print("TCRT500 value: ");
+  Serial.println(value);
+  return (value <= sm1_tcrtThreshold[sideInteger])? true:false;
+}
+
+
+//----Functions for mqtt----
+void callback(char* topic, byte* payload, unsigned int length) {
+  mqttMessage = "";
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i=0;i<length;i++) {
+    Serial.print((char)payload[i]);
+    mqttMessage.concat((char)payload[i]);
+  }
+  Serial.println();
+  if (strcmp(topic, mqttCurtainsCommand)==0){
+    spinMotor1(sm1_steps, mqttMessage.toFloat()); 
+  }
+    
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client1.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client1.connect(CLIENT_ID, mqttTopic_deviceStatus, 0, 1, device_offline)) {
+      Serial.println("connected");
+      client1.publish(mqttTopic_deviceStatus,device_online, 1);
+      client1.subscribe(mqttCurtainsCommand);
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client1.state());
+      Serial.println(" try again in 2 seconds");
+      // Wait 2 seconds before retrying
+      delay(2000);
+    }
+  }
+}
+
+
+//function for DHT temperature and humidity sensor
+void post_DHTSensorData(float sample_TempTotal, float sample_HumidityTotal, int sampleSize){
+  h = sample_TempTotal/sampleSize;
+  t = t_temp/sampleSize;
+  h_temp = 0;
+  t_temp = 0;
+  if(isnan(h) || isnan(t)){
+    Serial.println("Failed to read DHT sensor");
+  }else{
+    char t_char[6];
+    char h_char[6];
+    char hI_char[6];
+    dtostrf(h, 4,2, h_char);
+    dtostrf(t, 3,2, t_char);
+    dtostrf(dhtSensor.computeHeatIndex(t, h, false), 4,2, hI_char);
+    client1.publish("mBedroom/sensors/tempterature/status", t_char, 1);
+    client1.publish("mBedroom/sensors/humidity/status", h_char, 1);
+    client1.publish("mBedroom/sensors/heatIndex/status", hI_char, 1);
+    dht_lastTimeTaken = millis();
+  }
 }
